@@ -1,8 +1,13 @@
 import cv2
 import threading
-import pyvirtualcam
 import time
-from pyvirtualcam import PixelFormat
+
+# Спробуємо імпортувати pyvirtualcam безпечно
+try:
+    import pyvirtualcam
+except ImportError:
+    pyvirtualcam = None
+    print("Error: pyvirtualcam not installed. Run 'pip install pyvirtualcam'")
 
 
 class VideoStreamHandler:
@@ -30,14 +35,20 @@ class VideoStreamHandler:
         self.connect_aborted = False
 
         url = ""
-        if protocol == "RTSP":
+        # Обробка нових спрощених назв протоколів
+        if protocol == "Мережа":
+            # Використовуємо RTSP як стандартний мережевий протокол
+            url = f"rtsp://{ip_address}:554/live"
+        elif protocol == "USB":
+            url = "rtsp://127.0.0.1:8554/live"
+
+        # Залишаємо сумісність на випадок прямого виклику
+        elif protocol == "RTSP":
             url = f"rtsp://{ip_address}:554/live"
         elif protocol == "HTTP":
             url = f"http://{ip_address}:8080/video"
         elif protocol == "MJPEG":
             url = f"http://{ip_address}:8080/mjpeg"
-        elif protocol == "USB":
-            url = "rtsp://127.0.0.1:8554/live"
 
         print(f"Connecting to: {url}")
 
@@ -98,12 +109,17 @@ class VideoStreamHandler:
         return None
 
     def _process_stream(self):
+        if pyvirtualcam is None:
+            print("Virtual Camera library not available.")
+            return
+
         try:
+            # Використовуємо pyvirtualcam.PixelFormat.BGR напряму
             self.virtual_cam = pyvirtualcam.Camera(
                 width=self.target_width,
                 height=self.target_height,
                 fps=self.fps,
-                fmt=PixelFormat.BGR
+                fmt=pyvirtualcam.PixelFormat.BGR
             )
             print(f"Virtual camera started: {self.virtual_cam.device}")
         except Exception as e:

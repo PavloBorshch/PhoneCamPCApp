@@ -32,10 +32,10 @@ class PhoneCamPCApp:
         conn_frame = ttk.LabelFrame(self.root, text="Налаштування з'єднання", padding=10)
         conn_frame.pack(fill="x", padx=10, pady=5)
 
-        ttk.Label(conn_frame, text="Протокол:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
-        self.protocol_var = tk.StringVar(value="RTSP")
+        ttk.Label(conn_frame, text="Підключення:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.protocol_var = tk.StringVar(value="Мережа")
         self.proto_combo = ttk.Combobox(conn_frame, textvariable=self.protocol_var,
-                                        values=["RTSP", "HTTP", "MJPEG", "USB"], state="readonly", width=10)
+                                        values=["Мережа", "USB"], state="readonly", width=10)
         self.proto_combo.grid(row=0, column=1, padx=5, pady=5)
 
         ttk.Label(conn_frame, text="IP Телефону:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
@@ -79,7 +79,7 @@ class PhoneCamPCApp:
         ip = self.ip_entry.get()
         proto = self.protocol_var.get()
 
-        if not ip and proto != "USB":
+        if not ip and proto == "Мережа":
             messagebox.showerror("Помилка", "Введіть IP адресу")
             return
 
