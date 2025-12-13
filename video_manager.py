@@ -22,7 +22,7 @@ class VideoStreamHandler:
         self.current_frame = None
         self.lock = threading.Lock()
 
-        # Для TCP (USB) режиму
+        # Для TCP (USB/Network) режиму
         self.tcp_socket = None
 
         # Прапорець для відстеження скасування під час спроби підключення
@@ -32,6 +32,7 @@ class VideoStreamHandler:
         self.target_height = 1080
         self.fps = 30
         self.tcp_port = 8554
+        self.tcp_host = "127.0.0.1"
 
     def start(self, protocol, ip_address):
         if self.running:
@@ -40,36 +41,37 @@ class VideoStreamHandler:
         self.connect_aborted = False
         self.running = True
 
+        # Уніфікована логіка для обох протоколів
+        # Ми тепер використовуємо наш власний TCP протокол і для USB, і для Мережі
+
         if protocol == "USB":
             if ip_address and ip_address.isdigit():
                 self.tcp_port = int(ip_address)
             else:
                 self.tcp_port = 8554
+            self.tcp_host = "127.0.0.1"
 
-            print(f"Starting USB mode on localhost:{self.tcp_port}")
-            self.thread = threading.Thread(target=self._process_stream_usb_tcp, daemon=True)
+            print(f"Starting USB mode on {self.tcp_host}:{self.tcp_port}")
+            self.thread = threading.Thread(target=self._process_stream_tcp, daemon=True)
             self.thread.start()
             return True
-        else:
-            url = f"rtsp://{ip_address}:554/live"
-            print(f"Connecting to RTSP: {url}")
 
-            try:
-                cap = cv2.VideoCapture(url)
-                if self.connect_aborted:
-                    cap.release()
-                    return False
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                if not cap.isOpened():
-                    return False
-                self.cap = cap
-            except Exception as e:
-                print(f"RTSP Error: {e}")
+        elif protocol == "Мережа" or protocol == "RTSP":
+            # Використовуємо IP телефону для мережевого режиму
+            if not ip_address:
+                print("Error: IP address required for Network mode")
+                self.running = False
                 return False
 
-            self.thread = threading.Thread(target=self._process_stream_rtsp, daemon=True)
+            self.tcp_host = ip_address
+            self.tcp_port = 8554  # Стандартний порт нашого сервера
+
+            print(f"Starting Network TCP mode on {self.tcp_host}:{self.tcp_port}")
+            self.thread = threading.Thread(target=self._process_stream_tcp, daemon=True)
             self.thread.start()
             return True
+
+        return False
 
     def stop(self):
         self.connect_aborted = True
@@ -116,21 +118,9 @@ class VideoStreamHandler:
         except Exception as e:
             print(f"Virtual Camera Error: {e}")
 
-    def _process_stream_rtsp(self):
+    def _process_stream_tcp(self):
         self._setup_virtual_cam()
-        while self.running:
-            if self.cap and self.cap.isOpened():
-                ret, frame = self.cap.read()
-                if not ret:
-                    time.sleep(0.1)
-                    continue
-                self._handle_frame(frame)
-            else:
-                time.sleep(0.5)
-
-    def _process_stream_usb_tcp(self):
-        self._setup_virtual_cam()
-        print(f"TCP Loop Started on port {self.tcp_port}. Waiting for connection...")
+        print(f"TCP Loop Started connecting to {self.tcp_host}:{self.tcp_port}...")
 
         # Нескінченний цикл спроб підключення (поки працює додаток)
         while self.running:
@@ -139,11 +129,11 @@ class VideoStreamHandler:
                 try:
                     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     sock.settimeout(2.0)  # Тайм-аут на підключення
-                    sock.connect(('127.0.0.1', self.tcp_port))
+                    sock.connect((self.tcp_host, self.tcp_port))
 
                     self.tcp_socket = sock
                     self.tcp_socket.settimeout(3.0)  # Тайм-аут на читання даних
-                    print("TCP Socket Connected! Receiving stream...")
+                    print(f"TCP Socket Connected to {self.tcp_host}! Receiving stream...")
                 except Exception:
                     # Якщо підключення немає, чекаємо і пробуємо знову
                     time.sleep(1.0)
@@ -154,14 +144,15 @@ class VideoStreamHandler:
                 # Читаємо розмір
                 size_data = self._recv_all(4)
                 if not size_data:
+                    # Це трапляється при розриві з'єднання
                     raise ConnectionResetError("No header")
 
                 size = struct.unpack('>I', size_data)[0]
 
-                # Обробка EOS (0 size) або помилкових даних
+                # Обробка EOS (0 size) - сигнал завершення від телефону
                 if size == 0:
                     print("Received EOS (Stream Ended by Phone)")
-                    # Скидаємо з'єднання, щоб чекати нового
+                    # Закриваємо сокет і чекаємо нового з'єднання
                     raise ConnectionResetError("EOS")
 
                 if size > 10_000_000:
@@ -192,7 +183,7 @@ class VideoStreamHandler:
                     elif rotation == 180:
                         frame = cv2.rotate(frame, cv2.ROTATE_180)
                     elif rotation == 270:
-                        # ВИПРАВЛЕНО: Використовуємо COUNTERCLOCKWISE для 270 (поворот вліво)
+                        # 270 градусів = поворот вліво = 90 проти годинникової
                         frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
                     self._handle_frame(frame)
@@ -206,7 +197,7 @@ class VideoStreamHandler:
                         pass
                     self.tcp_socket = None
 
-                # Очищуємо кадр, щоб UI показав "Немає з'єднання"
+                # Очищуємо кадр, щоб UI показав "Очікування..."
                 with self.lock:
                     self.current_frame = None
 

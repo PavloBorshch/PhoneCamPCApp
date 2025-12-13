@@ -93,7 +93,7 @@ class PhoneCamPCApp:
 
         ttk.Label(conn_frame, text="IP Телефону:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
         self.ip_entry = ttk.Entry(conn_frame, width=20)
-        self.ip_entry.insert(0, "192.168.0.105")
+        self.ip_entry.insert(0, "127.0.0.1")
         self.ip_entry.grid(row=1, column=1, padx=5, pady=5)
 
         self.connect_btn = ttk.Button(conn_frame, text="Під'єднатись", command=self.toggle_connection)
