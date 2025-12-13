@@ -1,9 +1,8 @@
 import cv2
 import threading
 import time
-import socket
-import struct
 import numpy as np
+from stream_protocol import StreamClient
 
 # Спробуємо імпортувати pyvirtualcam безпечно
 try:
@@ -17,88 +16,40 @@ class VideoStreamHandler:
     def __init__(self):
         self.running = False
         self.thread = None
-        self.cap = None
         self.virtual_cam = None
         self.current_frame = None
         self.lock = threading.Lock()
 
-        # Для TCP (USB/Network) режиму
-        self.tcp_socket = None
-
-        # Прапорець для відстеження скасування під час спроби підключення
-        self.connect_aborted = False
-
         self.target_width = 1920
         self.target_height = 1080
         self.fps = 30
-        self.tcp_port = 8554
-        self.tcp_host = "127.0.0.1"
 
-    def start(self, protocol, ip_address):
+        # Налаштування підключення
+        self.target_host = "127.0.0.1"
+        self.target_port = 8554
+
+    def start(self, host, port):
         if self.running:
-            return True
+            return
 
-        self.connect_aborted = False
+        self.target_host = host
+        self.target_port = int(port)
         self.running = True
 
-        # Уніфікована логіка для обох протоколів
-        # Ми тепер використовуємо наш власний TCP протокол і для USB, і для Мережі
-
-        if protocol == "USB":
-            if ip_address and ip_address.isdigit():
-                self.tcp_port = int(ip_address)
-            else:
-                self.tcp_port = 8554
-            self.tcp_host = "127.0.0.1"
-
-            print(f"Starting USB mode on {self.tcp_host}:{self.tcp_port}")
-            self.thread = threading.Thread(target=self._process_stream_tcp, daemon=True)
-            self.thread.start()
-            return True
-
-        elif protocol == "Мережа" or protocol == "RTSP":
-            # Використовуємо IP телефону для мережевого режиму
-            if not ip_address:
-                print("Error: IP address required for Network mode")
-                self.running = False
-                return False
-
-            self.tcp_host = ip_address
-            self.tcp_port = 8554  # Стандартний порт нашого сервера
-
-            print(f"Starting Network TCP mode on {self.tcp_host}:{self.tcp_port}")
-            self.thread = threading.Thread(target=self._process_stream_tcp, daemon=True)
-            self.thread.start()
-            return True
-
-        return False
+        print(f"[VideoMgr] Starting thread for {self.target_host}:{self.target_port}")
+        self.thread = threading.Thread(target=self._worker_loop, daemon=True)
+        self.thread.start()
 
     def stop(self):
-        self.connect_aborted = True
         self.running = False
-
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=1.0)
 
-        if self.cap:
-            self.cap.release()
-            self.cap = None
-
-        if self.tcp_socket:
-            try:
-                self.tcp_socket.close()
-            except:
-                pass
-            self.tcp_socket = None
-
-        if self.virtual_cam:
-            self.virtual_cam.close()
-            self.virtual_cam = None
+        self._close_virtual_cam()
 
         with self.lock:
             self.current_frame = None
-
-        print("Stream stopped")
+        print("[VideoMgr] Stopped")
 
     def get_latest_frame(self):
         with self.lock:
@@ -108,6 +59,8 @@ class VideoStreamHandler:
 
     def _setup_virtual_cam(self):
         if pyvirtualcam is None: return
+        if self.virtual_cam is not None: return  # Вже створено
+
         try:
             self.virtual_cam = pyvirtualcam.Camera(
                 width=self.target_width,
@@ -115,123 +68,86 @@ class VideoStreamHandler:
                 fps=self.fps,
                 fmt=pyvirtualcam.PixelFormat.BGR
             )
+            print(f"[VirtualCam] Started: {self.virtual_cam.device}")
         except Exception as e:
-            print(f"Virtual Camera Error: {e}")
+            print(f"[VirtualCam] Error: {e}")
 
-    def _process_stream_tcp(self):
+    def _close_virtual_cam(self):
+        if self.virtual_cam:
+            self.virtual_cam.close()
+            self.virtual_cam = None
+
+    def _worker_loop(self):
+        """Головний цикл обробки."""
         self._setup_virtual_cam()
-        print(f"TCP Loop Started connecting to {self.tcp_host}:{self.tcp_port}...")
 
-        # Нескінченний цикл спроб підключення (поки працює додаток)
+        # Створюємо клієнт протоколу
+        client = StreamClient(self.target_host, self.target_port)
+
         while self.running:
-            # 1. Етап підключення
-            if self.tcp_socket is None:
-                try:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.settimeout(2.0)  # Тайм-аут на підключення
-                    sock.connect((self.tcp_host, self.tcp_port))
-
-                    self.tcp_socket = sock
-                    self.tcp_socket.settimeout(3.0)  # Тайм-аут на читання даних
-                    print(f"TCP Socket Connected to {self.tcp_host}! Receiving stream...")
-                except Exception:
-                    # Якщо підключення немає, чекаємо і пробуємо знову
-                    time.sleep(1.0)
+            # 1. Забезпечення з'єднання
+            if not client.is_connected:
+                connected = client.connect()
+                if not connected:
+                    time.sleep(1.0)  # Чекаємо перед повторною спробою
                     continue
 
-            # 2. Етап читання даних
+            # 2. Отримання та обробка даних
             try:
-                # Читаємо розмір
-                size_data = self._recv_all(4)
-                if not size_data:
-                    # Це трапляється при розриві з'єднання
-                    raise ConnectionResetError("No header")
+                # Отримуємо сирі дані через протокол
+                jpeg_data, rotation = client.receive_packet()
 
-                size = struct.unpack('>I', size_data)[0]
-
-                # Обробка EOS (0 size) - сигнал завершення від телефону
-                if size == 0:
-                    print("Received EOS (Stream Ended by Phone)")
-                    # Закриваємо сокет і чекаємо нового з'єднання
-                    raise ConnectionResetError("EOS")
-
-                if size > 10_000_000:
-                    print(f"Invalid frame size: {size}. Resetting.")
-                    raise ValueError("Invalid size")
-
-                # Читаємо кут
-                rot_data = self._recv_all(4)
-                if not rot_data:
-                    raise ConnectionResetError("No rotation data")
-
-                # Читаємо як знакове ціле і нормалізуємо
-                raw_rotation = struct.unpack('>i', rot_data)[0]
-                rotation = raw_rotation % 360
-
-                # Читаємо картинку
-                img_data = self._recv_all(size)
-                if not img_data:
-                    raise ConnectionResetError("No image body")
-
-                nparr = np.frombuffer(img_data, np.uint8)
+                # Декодуємо картинку
+                nparr = np.frombuffer(jpeg_data, np.uint8)
                 frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
                 if frame is not None:
-                    # Логіка повороту
-                    if rotation == 90:
-                        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-                    elif rotation == 180:
-                        frame = cv2.rotate(frame, cv2.ROTATE_180)
-                    elif rotation == 270:
-                        # 270 градусів = поворот вліво = 90 проти годинникової
-                        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                    # Обробка повороту
+                    frame = self._rotate_image(frame, rotation)
 
-                    self._handle_frame(frame)
+                    # Відправка у віртуальну камеру та оновлення прев'ю
+                    self._process_frame_output(frame)
 
-            except (socket.timeout, ConnectionResetError, ValueError, OSError):
-                # Закриваємо поточний сокет
-                if self.tcp_socket:
-                    try:
-                        self.tcp_socket.close()
-                    except:
-                        pass
-                    self.tcp_socket = None
-
-                # Очищуємо кадр, щоб UI показав "Очікування..."
+            except TimeoutError:
+                # Просто немає даних певний час, нічого страшного, чекаємо далі
+                pass
+            except (ConnectionResetError, ValueError) as e:
+                print(f"[VideoMgr] Stream error: {e}")
+                client.close()
+                # Очищаємо кадр, щоб показати "Немає сигналу"
                 with self.lock:
                     self.current_frame = None
+                time.sleep(0.5)
+            except Exception as e:
+                print(f"[VideoMgr] Unexpected error: {e}")
+                client.close()
+                time.sleep(1.0)
 
-                time.sleep(0.5)  # Пауза перед наступною спробою
+        client.close()
+        self._close_virtual_cam()
 
-        if self.tcp_socket:
-            try:
-                self.tcp_socket.close()
-            except:
-                pass
-        print("TCP Loop finished")
+    def _rotate_image(self, frame, rotation):
+        if rotation == 90:
+            return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        elif rotation == 180:
+            return cv2.rotate(frame, cv2.ROTATE_180)
+        elif rotation == 270:
+            # Виправлення для повороту вліво (Counter-Clockwise)
+            return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        return frame
 
-    def _recv_all(self, n):
-        data = b''
-        while len(data) < n:
-            try:
-                packet = self.tcp_socket.recv(n - len(data))
-                if not packet: return None
-                data += packet
-            except socket.timeout:
-                raise
-            except:
-                return None
-        return data
-
-    def _handle_frame(self, frame):
+    def _process_frame_output(self, frame):
+        # 1. Віртуальна камера
         if self.virtual_cam:
             try:
+                # Ресайз до цільового розміру віртуальної камери
                 resized = cv2.resize(frame, (self.target_width, self.target_height))
                 self.virtual_cam.send(resized)
                 self.virtual_cam.sleep_until_next_frame()
-            except Exception as e:
+            except Exception:
                 pass
 
+        # 2. Прев'ю для GUI (BGR -> RGB)
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         with self.lock:
             self.current_frame = rgb_frame
