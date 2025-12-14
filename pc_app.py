@@ -7,6 +7,7 @@ import subprocess
 # Імпортуємо наші модулі
 from adb_utils import AdbManager
 from video_manager import VideoStreamHandler
+from audio_manager import AudioManager
 
 
 class PhoneCamPCApp:
@@ -14,7 +15,6 @@ class PhoneCamPCApp:
         self.root = root
         self.root.title("PhoneCam PC Client")
 
-        # Змінюємо розмір вікна на більш широкий для горизонтального компонування
         self.root.geometry("800x500")
         self.root.resizable(True, True)
         self.root.configure(bg="#f0f0f0")
@@ -22,105 +22,66 @@ class PhoneCamPCApp:
         # Ініціалізація менеджерів
         self.adb = AdbManager()
         self.video_handler = VideoStreamHandler()
+        self.audio_handler = AudioManager()  # Ініціалізація аудіо
 
         self.is_connected = False
         self.is_connecting_process = False
 
-        self.last_usb_port = None
+        self.last_usb_port_video = None
+        self.last_usb_port_audio = None
         self.connection_id = 0
 
-        # Змінна для збереження поточного протоколу
         self.protocol_var = tk.StringVar(value="Мережа")
 
         self._setup_ui()
-        self._update_protocol_visuals()  # Початковий стан
+        self._update_protocol_visuals()
         self.root.after(33, self._update_gui_loop)
 
     def _setup_ui(self):
         # --- Ліва панель (Керування) ---
         self.left_panel = tk.Frame(self.root, width=250, bg="#f0f0f0", padx=20, pady=20)
         self.left_panel.pack(side=tk.LEFT, fill=tk.Y)
-        self.left_panel.pack_propagate(False)  # Фіксуємо ширину
+        self.left_panel.pack_propagate(False)
 
-        # Кнопки вибору режиму
         self.mode_frame = tk.Frame(self.left_panel, bg="#f0f0f0")
         self.mode_frame.pack(fill=tk.X, pady=(0, 20))
 
-        # Використовуємо tk.Button для можливості зміни кольору фону
-        self.btn_network = tk.Button(
-            self.mode_frame,
-            text="мережа",
-            font=("Arial", 12),
-            command=lambda: self._set_protocol("Мережа"),
-            relief=tk.FLAT,
-            bd=0
-        )
+        self.btn_network = tk.Button(self.mode_frame, text="мережа", font=("Arial", 12),
+                                     command=lambda: self._set_protocol("Мережа"), relief=tk.FLAT, bd=0)
         self.btn_network.pack(fill=tk.X, pady=5)
 
-        self.btn_usb = tk.Button(
-            self.mode_frame,
-            text="USB",
-            font=("Arial", 12),
-            command=lambda: self._set_protocol("USB"),
-            relief=tk.FLAT,
-            bd=0
-        )
+        self.btn_usb = tk.Button(self.mode_frame, text="USB", font=("Arial", 12),
+                                 command=lambda: self._set_protocol("USB"), relief=tk.FLAT, bd=0)
         self.btn_usb.pack(fill=tk.X, pady=5)
 
-        # Секція IP адреси (контейнер для легкого приховування)
         self.ip_section = tk.Frame(self.left_panel, bg="#f0f0f0")
         self.ip_section.pack(fill=tk.X, pady=10)
 
-        self.lbl_ip = tk.Label(
-            self.ip_section,
-            text="IP телефону:",
-            font=("Arial", 12),
-            bg="#f0f0f0",
-            anchor="w"
-        )
+        self.lbl_ip = tk.Label(self.ip_section, text="IP телефону:", font=("Arial", 12), bg="#f0f0f0", anchor="w")
         self.lbl_ip.pack(fill=tk.X)
 
         self.ip_entry = tk.Entry(self.ip_section, font=("Arial", 12), bg="#e0e0e0", bd=1, relief=tk.SOLID)
         self.ip_entry.insert(0, "192.168.0.105")
         self.ip_entry.pack(fill=tk.X, pady=5, ipady=3)
 
-        # Пустий простір, щоб кнопка "Під'єднатись" була знизу
         self.spacer = tk.Frame(self.left_panel, bg="#f0f0f0")
         self.spacer.pack(fill=tk.BOTH, expand=True)
 
-        # Статус ADB (маленький текст над кнопкою)
         self.adb_label = tk.Label(self.left_panel, text="", font=("Arial", 8), bg="#f0f0f0")
         self.adb_label.pack(fill=tk.X, pady=(0, 5))
         self._check_adb_status()
 
-        # Кнопка підключення
-        self.connect_btn = tk.Button(
-            self.left_panel,
-            text="Під'єднатись",
-            font=("Arial", 12),
-            bg="#b0b0c0",  # Світло-фіолетовий відтінок
-            fg="black",
-            command=self.toggle_connection,
-            relief=tk.RAISED
-        )
+        self.connect_btn = tk.Button(self.left_panel, text="Під'єднатись", font=("Arial", 12),
+                                     bg="#b0b0c0", fg="black", command=self.toggle_connection, relief=tk.RAISED)
         self.connect_btn.pack(fill=tk.X, pady=10, ipady=5)
 
-        # --- Права панель (Прев'ю) ---
+        # --- Права панель ---
         self.right_panel = tk.Frame(self.root, bg="#101010")
         self.right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        self.preview_label = tk.Label(
-            self.right_panel,
-            text="попередній\nперегляд\nкамери",
-            font=("Arial", 20),
-            fg="white",
-            bg="#101010"
-        )
+        self.preview_label = tk.Label(self.right_panel, text="попередній\nперегляд\nкамери",
+                                      font=("Arial", 20), fg="white", bg="#101010")
         self.preview_label.pack(fill=tk.BOTH, expand=True)
-
-        # Статус бар (внизу вікна, поверх панелей, або просто внизу лівої)
-        # В даному дизайні статус бар не передбачено явно,
-        # але ми можемо змінювати текст кнопки або виводити помилки messagebox-ом.
 
     def _check_adb_status(self):
         adb_found = self.adb.is_available()
@@ -130,30 +91,22 @@ class PhoneCamPCApp:
             self.adb_label.config(text="ADB не знайдено", fg="red")
 
     def _set_protocol(self, protocol):
-        if self.is_connected or self.is_connecting_process:
-            return  # Не дозволяємо змінювати під час з'єднання
-
+        if self.is_connected or self.is_connecting_process: return
         self.protocol_var.set(protocol)
         self._update_protocol_visuals()
 
     def _update_protocol_visuals(self):
         protocol = self.protocol_var.get()
-
-        # Кольори кнопок (активна - синя, неактивна - сіра)
-        active_bg = "#3333cc"  # Темно-синій
-        active_fg = "white"
-        inactive_bg = "#b0b0c0"  # Сірий
-        inactive_fg = "black"
+        active_bg, active_fg = "#3333cc", "white"
+        inactive_bg, inactive_fg = "#b0b0c0", "black"
 
         if protocol == "Мережа":
             self.btn_network.config(bg=active_bg, fg=active_fg)
             self.btn_usb.config(bg=inactive_bg, fg=inactive_fg)
-            # Показуємо поле IP
             self.ip_section.pack(fill=tk.X, pady=10, after=self.mode_frame)
         else:
             self.btn_usb.config(bg=active_bg, fg=active_fg)
             self.btn_network.config(bg=inactive_bg, fg=inactive_fg)
-            # Ховаємо поле IP
             self.ip_section.pack_forget()
 
     def toggle_connection(self):
@@ -173,7 +126,6 @@ class PhoneCamPCApp:
             messagebox.showerror("Помилка", "Введіть IP адресу")
             return
 
-        # Зміна UI на стан "Підключення..."
         self.connect_btn.config(text="Скасувати", bg="#ffcccc")
         self.btn_network.config(state="disabled")
         self.btn_usb.config(state="disabled")
@@ -183,12 +135,12 @@ class PhoneCamPCApp:
         self.connection_id += 1
         current_attempt_id = self.connection_id
 
-        # Запускаємо процес підключення в окремому потоці
         threading.Thread(target=self._perform_connection, args=(proto, ip, current_attempt_id), daemon=True).start()
 
     def _perform_connection(self, proto, ip, attempt_id):
         target_host = ip
-        target_port = 8554
+        target_port_video = 8554
+        target_port_audio = 8555  # Стандартний порт для аудіо
 
         if proto == "USB":
             if not self.adb.is_available():
@@ -197,15 +149,23 @@ class PhoneCamPCApp:
                 return
 
             try:
-                free_port = self.adb.get_free_port(8554)
-                print(f"Found free local port: {free_port}")
+                # 1. Знаходимо вільні порти (окремо для відео і аудіо)
+                free_port_video = self.adb.get_free_port(8554)
+                # Шукаємо наступний вільний порт, відмінний від відео
+                free_port_audio = self.adb.get_free_port(free_port_video + 1)
 
-                self.adb.start_forwarding(free_port, 8554)
-                print("ADB forward set successfully")
+                print(f"Mapping ports: Local {free_port_video}->Android 8554, Local {free_port_audio}->Android 8555")
 
-                self.last_usb_port = free_port
+                # 2. Прокидаємо порти
+                self.adb.start_forwarding(free_port_video, 8554)
+                self.adb.start_forwarding(free_port_audio, 8555)
+
+                self.last_usb_port_video = free_port_video
+                self.last_usb_port_audio = free_port_audio
+
                 target_host = "127.0.0.1"
-                target_port = free_port
+                target_port_video = free_port_video
+                target_port_audio = free_port_audio
 
             except Exception as e:
                 print(f"Connection setup failed: {e}")
@@ -213,47 +173,46 @@ class PhoneCamPCApp:
                 self.root.after(0, self._on_connection_completed, False, attempt_id)
                 return
 
-        # Запускаємо відео менеджер
-        self.video_handler.start(target_host, target_port)
+        # Запускаємо ОБОХ менеджерів
+        self.video_handler.start(target_host, target_port_video)
+        self.audio_handler.start(target_host, target_port_audio)  # <-- ДОДАНО ЗАПУСК АУДІО
 
-        # Вважаємо ініціацію успішною
         self.root.after(0, self._on_connection_completed, True, attempt_id)
 
     def _on_connection_completed(self, success, attempt_id):
-        if attempt_id != self.connection_id:
-            return
-
+        if attempt_id != self.connection_id: return
         self.is_connecting_process = False
 
         if success:
             self.is_connected = True
-            self.connect_btn.config(text="Від'єднатись", bg="#ff6666", fg="white")  # Червона кнопка для розриву
+            self.connect_btn.config(text="Від'єднатись", bg="#ff6666", fg="white")
             self.preview_label.config(text="Очікування трансляції...\n(Перевірте телефон)")
         else:
-            self._disconnect()  # Скидаємо UI до початкового стану
+            self._disconnect()
 
     def _disconnect(self):
         self.video_handler.stop()
+        self.audio_handler.stop()  # Зупиняємо аудіо
+
         self.is_connected = False
         self.is_connecting_process = False
 
-        # Скидання UI
         self.connect_btn.config(text="Під'єднатись", bg="#b0b0c0", fg="black")
         self.btn_network.config(state="normal")
         self.btn_usb.config(state="normal")
         self.ip_entry.config(state="normal")
-
         self.preview_label.config(image="", text="попередній\nперегляд\nкамери", bg="#101010")
 
         # Очистка ADB forward
-        if self.protocol_var.get() == "USB" and self.last_usb_port:
-            self.adb.remove_forwarding(self.last_usb_port)
-            self.last_usb_port = None
+        if self.protocol_var.get() == "USB":
+            if self.last_usb_port_video:
+                self.adb.remove_forwarding(self.last_usb_port_video)
+            if self.last_usb_port_audio:
+                self.adb.remove_forwarding(self.last_usb_port_audio)
+            self.last_usb_port_video = None
+            self.last_usb_port_audio = None
 
     def toggle_preview_visibility(self):
-        # У новому дизайні кнопка приховання прев'ю не передбачена на макеті,
-        # але функціонал можна залишити або прибрати.
-        # Тут я його прибираю для відповідності макету.
         pass
 
     def _update_gui_loop(self):
@@ -262,7 +221,6 @@ class PhoneCamPCApp:
             if frame is not None:
                 self._display_frame(frame)
             else:
-                # Якщо з'єднання активне, але кадрів немає
                 if self.preview_label.cget("text") == "":
                     self.preview_label.config(image="", text="Очікування...", bg="#101010", fg="white")
 
@@ -270,16 +228,12 @@ class PhoneCamPCApp:
 
     def _display_frame(self, rgb_image):
         try:
-            # Отримуємо розміри правої панелі для адаптивного ресайзу
             panel_w = self.right_panel.winfo_width()
             panel_h = self.right_panel.winfo_height()
-
-            if panel_w < 10 or panel_h < 10: return  # Ще не відмалювалось
+            if panel_w < 10 or panel_h < 10: return
 
             img = Image.fromarray(rgb_image)
             img_w, img_h = img.size
-
-            # Зберігаємо пропорції (Fit Center)
             ratio = min(panel_w / img_w, panel_h / img_h)
             new_w = int(img_w * ratio)
             new_h = int(img_h * ratio)

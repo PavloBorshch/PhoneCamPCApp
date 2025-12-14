@@ -59,7 +59,7 @@ class VideoStreamHandler:
 
     def _setup_virtual_cam(self):
         if pyvirtualcam is None: return
-        if self.virtual_cam is not None: return  # Вже створено
+        if self.virtual_cam is not None: return
 
         try:
             self.virtual_cam = pyvirtualcam.Camera(
@@ -78,43 +78,54 @@ class VideoStreamHandler:
             self.virtual_cam = None
 
     def _worker_loop(self):
-        """Головний цикл обробки."""
         self._setup_virtual_cam()
-
-        # Створюємо клієнт протоколу
         client = StreamClient(self.target_host, self.target_port)
 
         while self.running:
-            # 1. Забезпечення з'єднання
             if not client.is_connected:
                 connected = client.connect()
                 if not connected:
-                    time.sleep(1.0)  # Чекаємо перед повторною спробою
+                    time.sleep(1.0)
                     continue
 
-            # 2. Отримання та обробка даних
             try:
-                # Отримуємо сирі дані через протокол
                 jpeg_data, rotation = client.receive_packet()
-
-                # Декодуємо картинку
                 nparr = np.frombuffer(jpeg_data, np.uint8)
                 frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
                 if frame is not None:
-                    # Обробка повороту
+                    # 1. Поворот зображення
                     frame = self._rotate_image(frame, rotation)
 
-                    # Відправка у віртуальну камеру та оновлення прев'ю
-                    self._process_frame_output(frame)
+                    # 2. Відправка у віртуальну камеру (з збереженням пропорцій)
+                    # Створюємо чорний фон (canvas) розміром з віртуальну камеру
+                    canvas = np.zeros((self.target_height, self.target_width, 3), dtype=np.uint8)
+
+                    # Вписуємо зображення в canvas
+                    resized_frame = self._resize_contain(frame, self.target_width, self.target_height)
+
+                    # Центруємо зображення на фоні
+                    h_small, w_small = resized_frame.shape[:2]
+                    y_offset = (self.target_height - h_small) // 2
+                    x_offset = (self.target_width - w_small) // 2
+
+                    canvas[y_offset:y_offset + h_small, x_offset:x_offset + w_small] = resized_frame
+
+                    # Відправка у віртуальну камеру
+                    if self.virtual_cam:
+                        self.virtual_cam.send(canvas)
+                        self.virtual_cam.sleep_until_next_frame()
+
+                    # Оновлення прев'ю для GUI (використовуємо той самий кадр, але в RGB)
+                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Для прев'ю краще оригінал без смуг
+                    with self.lock:
+                        self.current_frame = rgb_frame
 
             except TimeoutError:
-                # Просто немає даних певний час, нічого страшного, чекаємо далі
                 pass
             except (ConnectionResetError, ValueError) as e:
                 print(f"[VideoMgr] Stream error: {e}")
                 client.close()
-                # Очищаємо кадр, щоб показати "Немає сигналу"
                 with self.lock:
                     self.current_frame = None
                 time.sleep(0.5)
@@ -132,22 +143,17 @@ class VideoStreamHandler:
         elif rotation == 180:
             return cv2.rotate(frame, cv2.ROTATE_180)
         elif rotation == 270:
-            # Виправлення для повороту вліво (Counter-Clockwise)
             return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         return frame
 
-    def _process_frame_output(self, frame):
-        # 1. Віртуальна камера
-        if self.virtual_cam:
-            try:
-                # Ресайз до цільового розміру віртуальної камери
-                resized = cv2.resize(frame, (self.target_width, self.target_height))
-                self.virtual_cam.send(resized)
-                self.virtual_cam.sleep_until_next_frame()
-            except Exception:
-                pass
+    def _resize_contain(self, image, target_w, target_h):
+        """Змінює розмір зображення, зберігаючи пропорції, щоб воно вмістилось у цільові розміри."""
+        h, w = image.shape[:2]
 
-        # 2. Прев'ю для GUI (BGR -> RGB)
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        with self.lock:
-            self.current_frame = rgb_frame
+        # Розрахунок масштабу
+        scale = min(target_w / w, target_h / h)
+
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+
+        return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
