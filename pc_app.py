@@ -4,6 +4,7 @@ from PIL import Image, ImageTk
 import threading
 import subprocess
 
+# Імпортуємо наші модулі
 from adb_utils import AdbManager
 from video_manager import VideoStreamHandler
 from audio_manager import AudioManager
@@ -21,7 +22,7 @@ class PhoneCamPCApp:
         # Ініціалізація менеджерів
         self.adb = AdbManager()
         self.video_handler = VideoStreamHandler()
-        self.audio_handler = AudioManager()  # Ініціалізація аудіо
+        self.audio_handler = AudioManager()
 
         self.is_connected = False
         self.is_connecting_process = False
@@ -139,7 +140,7 @@ class PhoneCamPCApp:
     def _perform_connection(self, proto, ip, attempt_id):
         target_host = ip
         target_port_video = 8554
-        target_port_audio = 8555  # Стандартний порт для аудіо
+        target_port_audio = 8555
 
         if proto == "USB":
             if not self.adb.is_available():
@@ -148,14 +149,18 @@ class PhoneCamPCApp:
                 return
 
             try:
-                # Знаходимо вільні порти, окремо для відео і аудіо
+                # 0. Обираємо конкретний девайс (щоб уникнути "more than one device")
+                device = self.adb.select_device()
+                if not device:
+                    raise Exception("Не знайдено підключених USB пристроїв.")
+
+                # 1. Знаходимо вільні порти
                 free_port_video = self.adb.get_free_port(8554)
-                # Шукаємо наступний вільний порт, відмінний від відео
                 free_port_audio = self.adb.get_free_port(free_port_video + 1)
 
-                print(f"Mapping ports: Local {free_port_video}->Android 8554, Local {free_port_audio}->Android 8555")
+                print(f"Mapping ports: {free_port_video}->8554, {free_port_audio}->8555 on device {device}")
 
-                # Прокидаємо порти
+                # 2. Прокидаємо порти
                 self.adb.start_forwarding(free_port_video, 8554)
                 self.adb.start_forwarding(free_port_audio, 8555)
 
@@ -167,14 +172,15 @@ class PhoneCamPCApp:
                 target_port_audio = free_port_audio
 
             except Exception as e:
-                print(f"Connection setup failed: {e}")
-                self.root.after(0, lambda: messagebox.showerror("Помилка", f"Помилка USB: {e}"))
+                err_msg = str(e)
+                print(f"Connection setup failed: {err_msg}")
+                self.root.after(0, lambda: messagebox.showerror("Помилка USB",
+                                                                f"{err_msg}\n\nПорада: Спробуйте відключити Емулятор, якщо він працює."))
                 self.root.after(0, self._on_connection_completed, False, attempt_id)
                 return
 
-        # Запускаємо обох менеджерів
         self.video_handler.start(target_host, target_port_video)
-        self.audio_handler.start(target_host, target_port_audio)  # <-- ДОДАНО ЗАПУСК АУДІО
+        self.audio_handler.start(target_host, target_port_audio)
 
         self.root.after(0, self._on_connection_completed, True, attempt_id)
 
@@ -191,7 +197,7 @@ class PhoneCamPCApp:
 
     def _disconnect(self):
         self.video_handler.stop()
-        self.audio_handler.stop()  # Зупиняємо аудіо
+        self.audio_handler.stop()
 
         self.is_connected = False
         self.is_connecting_process = False
@@ -202,7 +208,6 @@ class PhoneCamPCApp:
         self.ip_entry.config(state="normal")
         self.preview_label.config(image="", text="попередній\nперегляд\nкамери", bg="#101010")
 
-        # Очистка ADB forward
         if self.protocol_var.get() == "USB":
             if self.last_usb_port_video:
                 self.adb.remove_forwarding(self.last_usb_port_video)

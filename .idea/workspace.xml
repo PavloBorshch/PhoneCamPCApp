@@ -7,9 +7,7 @@
     <list default="true" id="dfbd0889-31c5-4462-958e-6c87a253b9f0" name="Changes" comment="Network connection fix and audio streaming added">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/adb_utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/adb_utils.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/audio_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/audio_manager.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/pc_app.py" beforeDir="false" afterPath="$PROJECT_DIR$/pc_app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_protocol.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_protocol.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -87,7 +85,7 @@
       <workItem from="1765588280303" duration="1606000" />
       <workItem from="1765633224480" duration="3058000" />
       <workItem from="1765636851913" duration="2317000" />
-      <workItem from="1765670160827" duration="9836000" />
+      <workItem from="1765670160827" duration="13393000" />
     </task>
     <task id="LOCAL-00001" summary="app functionality without connection">
       <option name="closed" value="true" />
@@ -145,7 +143,15 @@
       <option name="project" value="LOCAL" />
       <updated>1765681554852</updated>
     </task>
-    <option name="localTasksCounter" value="8" />
+    <task id="LOCAL-00008" summary="Network connection fix and audio streaming added">
+      <option name="closed" value="true" />
+      <created>1765686104457</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1765686104457</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -161,7 +167,7 @@
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/PhoneCamPCApp$video_manager.coverage" NAME="video_manager Coverage Results" MODIFIED="1765589606236" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/PhoneCamPCApp$pc_app.coverage" NAME="pc_app Coverage Results" MODIFIED="1765671729751" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/PhoneCamPCApp$pc_app.coverage" NAME="pc_app Coverage Results" MODIFIED="1765689293231" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/PhoneCamPCApp$main.coverage" NAME="main Coverage Results" MODIFIED="1764380563668" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>

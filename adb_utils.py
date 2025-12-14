@@ -8,6 +8,7 @@ import socket
 class AdbManager:
     def __init__(self):
         self.adb_path = self._find_adb()
+        self.current_device_serial = None
 
     def is_available(self):
         return self.adb_path is not None
@@ -44,6 +45,49 @@ class AdbManager:
 
         return None
 
+    def get_devices(self):
+        """Повертає список підключених пристроїв (serial, type)."""
+        if not self.adb_path: return []
+
+        try:
+            cmd = f"{self.adb_path} devices"
+            result = subprocess.run(cmd, check=True, shell=True, capture_output=True, text=True)
+            lines = result.stdout.strip().split('\n')
+            devices = []
+            # Перший рядок - заголовок "List of devices attached", пропускаємо
+            for line in lines[1:]:
+                parts = line.split()
+                if len(parts) >= 2:
+                    serial = parts[0]
+                    state = parts[1]
+                    if state == 'device':
+                        devices.append(serial)
+            return devices
+        except Exception as e:
+            print(f"[ADB] Error getting devices: {e}")
+            return []
+
+    def select_device(self):
+        """Обирає найкращий пристрій (пріоритет - фізичний, не емулятор)."""
+        devices = self.get_devices()
+        if not devices:
+            return None
+
+        if len(devices) == 1:
+            self.current_device_serial = devices[0]
+            return devices[0]
+
+        # Якщо декілька, шукаємо той, що не емулятор (не починається на emulator-)
+        for d in devices:
+            if not d.startswith("emulator-"):
+                self.current_device_serial = d
+                print(f"[ADB] Multiple devices found. Auto-selected physical device: {d}")
+                return d
+
+        # Якщо всі емулятори, беремо перший
+        self.current_device_serial = devices[0]
+        return devices[0]
+
     def get_free_port(self, start_port=8554):
         """Знаходить вільний локальний порт."""
         port = start_port
@@ -57,17 +101,23 @@ class AdbManager:
         return start_port
 
     def start_forwarding(self, local_port, remote_port):
-        """Виконує adb forward."""
+        """Виконує adb forward для вибраного пристрою."""
         if not self.adb_path:
             raise Exception("ADB not found")
 
-        # Спочатку намагаємось очистити цей порт, про всяк випадок
+        # Переконуємось, що пристрій вибрано
+        if not self.current_device_serial:
+            device = self.select_device()
+            if not device:
+                raise Exception("No Android device connected via USB")
+
+        # Спочатку намагаємось очистити цей порт
         self.remove_forwarding(local_port)
 
-        cmd = f"{self.adb_path} forward tcp:{local_port} tcp:{remote_port}"
+        # Додаємо -s SERIAL, щоб вказати конкретний телефон
+        cmd = f"{self.adb_path} -s {self.current_device_serial} forward tcp:{local_port} tcp:{remote_port}"
         print(f"[ADB] Executing: {cmd}")
 
-        # capture_output=True дозволяє перехопити текст помилки
         result = subprocess.run(cmd, check=True, shell=True, capture_output=True, text=True)
         return result
 
@@ -75,7 +125,9 @@ class AdbManager:
         """Очищає прокидання порту."""
         if not self.adb_path: return
         try:
-            cmd = f"{self.adb_path} forward --remove tcp:{local_port}"
+            # Видаляємо правило для конкретного пристрою, якщо він відомий
+            target = f"-s {self.current_device_serial}" if self.current_device_serial else ""
+            cmd = f"{self.adb_path} {target} forward --remove tcp:{local_port}"
             subprocess.run(cmd, shell=True, stderr=subprocess.DEVNULL)
             print(f"[ADB] Forward removed for port {local_port}")
         except Exception:
