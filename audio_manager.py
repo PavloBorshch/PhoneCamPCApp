@@ -2,7 +2,6 @@ import socket
 import threading
 import time
 
-# Імпорт PyAudio з обробкою помилки
 try:
     import pyaudio
 except ImportError:
@@ -60,7 +59,6 @@ class AudioManager:
             found_cable = False
 
             # Пошук пристрою "CABLE Input"
-            # (Це стандартна назва драйвера VB-Cable)
             info = self.pa.get_host_api_info_by_index(0)
             numdevices = info.get('deviceCount')
 
@@ -81,7 +79,7 @@ class AudioManager:
                 self.stream = None
                 return
 
-            # Відкриваємо потік ТІЛЬКИ якщо знайшли кабель
+            # Відкриваємо потік тільки якщо знайшли кабель
             self.stream = self.pa.open(
                 format=self.format,
                 channels=self.channels,
@@ -112,11 +110,11 @@ class AudioManager:
         self.pa = None
 
     def _worker_loop(self):
-        # Ініціалізація (спроба знайти кабель)
+        # Ініціалізація
         self._init_audio_stream()
 
         while self.running:
-            # 1. Підключення до телефону
+            # Підключення до телефону
             if self.socket is None:
                 try:
                     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -128,7 +126,7 @@ class AudioManager:
                     time.sleep(1.0)
                     continue
 
-            # 2. Читання даних
+            # Читання даних
             try:
                 # Читаємо порцію даних
                 # *2 тому що 16-бітний звук це 2 байти на семпл
@@ -137,14 +135,12 @@ class AudioManager:
                 if not data:
                     raise ConnectionResetError("No data")
 
-                # Ключовий момент: Якщо потік відкритий (Cable знайдено) - граємо.
-                # Якщо ні - просто ігноруємо дані (дропаємо), але продовжуємо читати,
-                # щоб буфер TCP не переповнився і додаток не завис.
+                #мЯкщо потік відкритий, Cable знайдено - граємо.
+                # Якщо ні -дропаємо, але продовжуємо читати, щоб буфер TCP не переповнився і додаток не завис.
                 if self.stream:
                     self.stream.write(data)
 
             except Exception as e:
-                # print(f"[AudioMgr] Stream error: {e}")
                 if self.socket:
                     try:
                         self.socket.close()

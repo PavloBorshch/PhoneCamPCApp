@@ -6,7 +6,6 @@ import time
 class StreamClient:
     """
     Відповідає за низькорівневе TCP з'єднання та розбір протоколу.
-    Протокол: [4 байти розмір] [4 байти кут] [тіло зображення...]
     """
 
     def __init__(self, host, port):
@@ -43,36 +42,35 @@ class StreamClient:
         """
         Читає один повний пакет даних.
         Повертає tuple: (image_bytes, rotation_degrees)
-        Кидає виключення при помилках або EOS.
         """
         if not self.socket:
             raise ConnectionError("No socket")
 
         try:
-            # 1. Читаємо заголовок (Розмір кадру)
+            # Читаємо заголовок, розмір кадру
             size_data = self._recv_all(4)
             if not size_data:
                 raise ConnectionResetError("Connection lost (no header)")
 
             size = struct.unpack('>I', size_data)[0]
 
-            # Перевірка на EOS (End Of Stream) або некоректні дані
+            # Перевірка на End Of Stream або некоректні дані
             if size == 0:
                 raise ConnectionResetError("EOS received")
-            if size > 20_000_000:  # Ліміт 20МБ на кадр (захист від сміття)
+            if size > 20_000_000:  # Ліміт 20МБ на кадр
                 raise ValueError(f"Frame too large: {size}")
 
-            # 2. Читаємо метадані (Кут повороту)
+            # Читаємо кут повороту
             rot_data = self._recv_all(4)
             if not rot_data:
                 raise ConnectionResetError("Connection lost (no rotation)")
 
             # Читаємо як знакове ціле (>i) для підтримки від'ємних значень
             raw_rotation = struct.unpack('>i', rot_data)[0]
-            # Нормалізація кута (щоб було 0..359)
+            # Нормалізація кута
             rotation = raw_rotation % 360
 
-            # 3. Читаємо тіло (JPEG)
+            # Читаємо тіло
             image_data = self._recv_all(size)
             if not image_data:
                 raise ConnectionResetError("Connection lost (incomplete body)")
@@ -80,10 +78,8 @@ class StreamClient:
             return image_data, rotation
 
         except socket.timeout:
-            # Таймаут - це не критична помилка сокета, але пакет не отримано
             raise TimeoutError("Socket timeout")
         except Exception as e:
-            # Будь-яка інша помилка - розрив
             self.close()
             raise e
 

@@ -40,8 +40,6 @@ class AdbManager:
 
         for path in possible_paths:
             if os.path.exists(path):
-                # Для Windows шляхи з пробілами краще брати в лапки,
-                # але subprocess.run(shell=True) краще розуміє raw string.
                 return f'"{path}"'
 
         return None

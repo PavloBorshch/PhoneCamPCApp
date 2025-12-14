@@ -4,7 +4,6 @@ from PIL import Image, ImageTk
 import threading
 import subprocess
 
-# Імпортуємо наші модулі
 from adb_utils import AdbManager
 from video_manager import VideoStreamHandler
 from audio_manager import AudioManager
@@ -38,7 +37,7 @@ class PhoneCamPCApp:
         self.root.after(33, self._update_gui_loop)
 
     def _setup_ui(self):
-        # --- Ліва панель (Керування) ---
+        # --- Ліва панель ---
         self.left_panel = tk.Frame(self.root, width=250, bg="#f0f0f0", padx=20, pady=20)
         self.left_panel.pack(side=tk.LEFT, fill=tk.Y)
         self.left_panel.pack_propagate(False)
@@ -149,14 +148,14 @@ class PhoneCamPCApp:
                 return
 
             try:
-                # 1. Знаходимо вільні порти (окремо для відео і аудіо)
+                # Знаходимо вільні порти, окремо для відео і аудіо
                 free_port_video = self.adb.get_free_port(8554)
                 # Шукаємо наступний вільний порт, відмінний від відео
                 free_port_audio = self.adb.get_free_port(free_port_video + 1)
 
                 print(f"Mapping ports: Local {free_port_video}->Android 8554, Local {free_port_audio}->Android 8555")
 
-                # 2. Прокидаємо порти
+                # Прокидаємо порти
                 self.adb.start_forwarding(free_port_video, 8554)
                 self.adb.start_forwarding(free_port_audio, 8555)
 
@@ -173,7 +172,7 @@ class PhoneCamPCApp:
                 self.root.after(0, self._on_connection_completed, False, attempt_id)
                 return
 
-        # Запускаємо ОБОХ менеджерів
+        # Запускаємо обох менеджерів
         self.video_handler.start(target_host, target_port_video)
         self.audio_handler.start(target_host, target_port_audio)  # <-- ДОДАНО ЗАПУСК АУДІО
 
